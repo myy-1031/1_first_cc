@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>番茄钟</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: linear-gradient(135deg, #fff5f5 0%, #faf5f0 50%, #f0f4f8 100%);
+    min-height: 100vh;
+    display: flex; justify-content: center; align-items: center;
+    -webkit-font-smoothing: antialiased;
+  }
+  .container {
+    background: rgba(255,255,255,0.85);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-radius: 32px;
+    padding: 48px 56px;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.06), 0 2px 12px rgba(0,0,0,0.04);
+    text-align: center;
+    min-width: 420px;
+  }
+  .header {
+    color: #b8a99a;
+    font-size: 13px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-bottom: 32px;
+  }
+  .task-name {
+    border: none;
+    background: transparent;
+    font-size: 20px;
+    color: #5c4f42;
+    text-align: center;
+    outline: none;
+    border-bottom: 2px dashed #e8ddd0;
+    padding: 6px 4px;
+    width: 260px;
+    margin-bottom: 36px;
+    transition: border-color 0.3s;
+  }
+  .task-name:focus { border-bottom-color: #d97d6e; }
+  .task-name::placeholder { color: #cfc4b8; }
+
+  /* 环形计时器 */
+  .ring-wrapper { position: relative; width: 280px; height: 280px; margin: 0 auto 36px; }
+  .ring-bg {
+    fill: none;
+    stroke: #f0e8e0;
+    stroke-width: 8;
+  }
+  .ring-fg {
+    fill: none;
+    stroke: #d97153;
+    stroke-width: 8;
+    stroke-linecap: round;
+    transform: rotate(-90deg);
+    transform-origin: center;
+    transition: stroke-dashoffset 0.8s linear;
+  }
+  .ring-fg.break { stroke: #6ba587; }
+
+  .time-display {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 58px;
+    font-weight: 600;
+    color: #4a3f38;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 2px;
+  }
+  .state-label {
+    font-size: 15px;
+    color: #a89888;
+    margin-top: -28px;
+    margin-bottom: 32px;
+    letter-spacing: 1px;
+  }
+
+  /* 番茄圆点 */
+  .dots { display: flex; justify-content: center; gap: 10px; margin-bottom: 32px; }
+  .dot {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: #e8ddd2;
+    transition: all 0.3s;
+  }
+  .dot.done { background: #d97153; box-shadow: 0 0 8px rgba(217,113,83,0.4); }
+
+  /* 按钮 */
+  .controls { display: flex; justify-content: center; gap: 14px; }
+  button {
+    border: none;
+    cursor: pointer;
+    border-radius: 50px;
+    font-size: 15px;
+    padding: 12px 28px;
+    font-weight: 500;
+    transition: all 0.25s;
+    letter-spacing: 0.5px;
+  }
+  button:active { transform: scale(0.96); }
+  .btn-primary {
+    background: #d97153;
+    color: #fff;
+    box-shadow: 0 4px 16px rgba(217,113,83,0.35);
+    min-width: 130px;
+  }
+  .btn-primary:hover { background: #c86045; box-shadow: 0 6px 20px rgba(217,113,83,0.45); }
+  .btn-secondary {
+    background: #fff;
+    color: #7a6d62;
+    border: 1.5px solid #e5dad0;
+  }
+  .btn-secondary:hover { background: #faf7f4; border-color: #d0c4b8; }
+
+  .footer { margin-top: 36px; color: #cfc4b8; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="header">POMODORO</div>
+
+  <input class="task-name" type="text" placeholder="点击输入任务名称..." maxlength="40">
+
+  <div class="ring-wrapper">
+    <svg width="280" height="280" viewBox="0 0 280 280">
+      <circle class="ring-bg" cx="140" cy="140" r="124"/>
+      <circle class="ring-fg" id="ringFg" cx="140" cy="140" r="124"
+              stroke-dasharray="779.1" stroke-dashoffset="0"/>
+    </svg>
+    <div class="time-display" id="timeDisplay">25:00</div>
+  </div>
+
+  <div class="state-label" id="stateLabel">准备就绪</div>
+
+  <div class="dots" id="dots"></div>
+
+  <div class="controls">
+    <button class="btn-secondary" id="btnReset">↺ 重置</button>
+    <button class="btn-primary" id="btnToggle">▶ 开始</button>
+    <button class="btn-secondary" id="btnSkip">⏭ 跳过</button>
+  </div>
+
+  <div class="footer">第 <span id="roundNum">1</span> 轮 · 完成 <span id="doneCount">0</span> 个番茄</div>
+</div>
+
+<script>
+(function() {
+  // ── 配置 ──
+  var WORK = 25 * 60, SHORT = 5 * 60, LONG = 15 * 60, GAP = 4;
+  var STATE_IDLE = 0, STATE_WORK = 1, STATE_SHORT = 2, STATE_LONG = 3;
+
+  var state = STATE_IDLE;
+  var remaining = WORK;
+  var total = WORK;
+  var completed = 0;
+  var timerId = null;
+
+  var CIRCUMFERENCE = 2 * Math.PI * 124; // ~779.1
+
+  // ── DOM ──
+  var $time = document.getElementById('timeDisplay');
+  var $ring = document.getElementById('ringFg');
+  var $state = document.getElementById('stateLabel');
+  var $dots = document.getElementById('dots');
+  var $btnTog = document.getElementById('btnToggle');
+  var $btnRst = document.getElementById('btnReset');
+  var $btnSkp = document.getElementById('btnSkip');
+  var $round = document.getElementById('roundNum');
+  var $done  = document.getElementById('doneCount');
+
+  // ── 事件 ──
+  $btnTog.addEventListener('click', toggle);
+  $btnRst.addEventListener('click', reset);
+  $btnSkp.addEventListener('click', skip);
+
+  // ── 逻辑 ──
+  function toggle() {
+    if (timerId) { pause(); return; }
+    if (state === STATE_IDLE) setState(STATE_WORK);
+    startTimer();
+  }
+
+  function startTimer() {
+    timerId = setInterval(tick, 1000);
+    $btnTog.textContent = '⏸ 暂停';
+  }
+
+  function pause() {
+    clearInterval(timerId);
+    timerId = null;
+    $btnTog.textContent = '▶ 开始';
+  }
+
+  function reset() {
+    pause();
+    completed = 0;
+    setState(STATE_IDLE);
+  }
+
+  function skip() {
+    pause();
+    advance();
+  }
+
+  function tick() {
+    if (remaining > 0) { remaining--; render(); }
+    if (remaining <= 0) {
+      pause();
+      if (state === STATE_WORK) {
+        var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        var osc = audioCtx.createOscillator();
+        var gain = audioCtx.createGain();
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.frequency.value = 880; osc.type = 'sine';
+        gain.gain.value = 0.15;
+        osc.start(); osc.stop(audioCtx.currentTime + 0.2);
+      }
+      advance();
+    }
+  }
+
+  function advance() {
+    if (state === STATE_WORK) {
+      completed++;
+      setState(completed % GAP === 0 ? STATE_LONG : STATE_SHORT);
+    } else {
+      setState(STATE_WORK);
+    }
+  }
+
+  function setState(s) {
+    state = s;
+    switch (s) {
+      case STATE_IDLE:   remaining = WORK;  total = WORK;  break;
+      case STATE_WORK:   remaining = WORK;  total = WORK;  break;
+      case STATE_SHORT:  remaining = SHORT; total = SHORT; break;
+      case STATE_LONG:   remaining = LONG;  total = LONG;  break;
+    }
+    render();
+  }
+
+  function render() {
+    var m = Math.floor(remaining / 60);
+    var s = remaining % 60;
+    $time.textContent = (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+
+    var offset = CIRCUMFERENCE * (1 - remaining / total);
+    $ring.setAttribute('stroke-dashoffset', offset);
+
+    switch (state) {
+      case STATE_IDLE:   $state.textContent = '准备就绪'; break;
+      case STATE_WORK:   $state.textContent = '🔴 专注中'; break;
+      case STATE_SHORT:  $state.textContent = '🟢 短休息'; break;
+      case STATE_LONG:   $state.textContent = '🔵 长休息'; break;
+    }
+
+    $ring.classList.toggle('break', state === STATE_SHORT || state === STATE_LONG);
+
+    renderDots();
+    $round.textContent = Math.floor(completed / GAP) + 1;
+    $done.textContent = completed;
+  }
+
+  function renderDots() {
+    var html = '';
+    for (var i = 0; i < 8; i++) {
+      html += '<div class="dot' + (i < completed ? ' done' : '') + '"></div>';
+    }
+    $dots.innerHTML = html;
+  }
+
+  renderDots();
+})();
+</script>
+</body>
+</html>
